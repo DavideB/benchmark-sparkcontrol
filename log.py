@@ -63,7 +63,7 @@ def download_slave(i, output_folder, app_id, config):
     :return: output_folder: the output folder
     """
     ssh_client = sshclient_from_instance(i, KEY_PAIR_PATH, user_name='ubuntu')
-    print("Downloading log from slave: " + i.public_dns_name)
+    print("Downloading log from slave: " + i.public_ips[0])
     try:
         worker_ip_fixed = i.private_ip_address.replace(".", "-")
         worker_log = "{0}logs/spark-ubuntu-org.apache.spark.deploy.worker.Worker-1-ip-{1}.out".format(
@@ -83,7 +83,7 @@ def download_slave(i, output_folder, app_id, config):
             print("Executor ID: " + file)
             ssh_client.get_file(
                 config["Spark"]["SparkHome"] + "work/" + app_id + "/" + file + "/stderr",
-                output_folder + "/" + i.public_dns_name + "-" + file + ".stderr")
+                output_folder + "/" + i.public_ips[0] + "-" + file + ".stderr")
     except FileNotFoundError:
         print("stderr not found")
     return output_folder
@@ -101,13 +101,13 @@ def download(log_folder, instances, master_dns, output_folder, config):
     """
     # MASTER
     print("Downloading log from Master: " + master_dns)
-    master_instance = [i for i in instances if i.public_dns_name == master_dns][0]
+    master_instance = [i for i in instances if i.public_ips[0] == master_dns][0]
     output_folder, app_id = download_master(master_instance, output_folder, log_folder, config)
 
     # SLAVE
     with ThreadPoolExecutor(multiprocessing.cpu_count()) as executor:
         for i in instances:
-            if i.public_dns_name != master_dns:
+            if i.public_ips[0] != master_dns:
                 worker = executor.submit(download_slave, i, output_folder, app_id, config)
                 output_folder = worker.result()
     return output_folder

@@ -7,8 +7,6 @@ import multiprocessing
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-import boto3
-
 import log
 import metrics
 import plot
@@ -23,10 +21,15 @@ from config import UPDATE_SPARK_DOCKER, DELETE_HDFS, SPARK_HOME, KILL_JAVA, SYNC
     SCALE_FACTOR, RAM_EXEC, \
     RAM_DRIVER, BENCHMARK_PERF, BENCH_LINES, HDFS_MASTER, DATA_AMI, REGION, HADOOP_CONF, \
     CONFIG_DICT, CREDENTIAL_PROFILE, \
-    CLUSTER_ID, SPARK_2_HOME, BENCHMARK_BENCH, BENCH_CONF, LOG_LEVEL
+    CLUSTER_ID, SPARK_2_HOME, BENCHMARK_BENCH, BENCH_CONF, LOG_LEVEL, \
+    AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_APPLICATION_ID, AZURE_SECRET, AZURE_LOCATION, \
+    AZURE_DATA_IMAGE, AZURE_REGION, TAG
+    
 from util.cmdshell import sshclient_from_instance
 from util.utils import timing, between
 
+from libcloud.compute.types import Provider
+from libcloud.compute.providers import get_driver
 
 def common_setup(ssh_client):
     """
@@ -84,7 +87,7 @@ def setup_slave(instance, master_dns):
     """
     ssh_client = sshclient_from_instance(instance, KEY_PAIR_PATH, user_name='ubuntu')
 
-    print("Setup Slave: " + instance.public_dns_name)
+    print("Setup Slave: " + instance.public_ips[0])
 
     common_setup(ssh_client)
 
@@ -139,11 +142,11 @@ def setup_slave(instance, master_dns):
         print("   Starting Spark Slave")
         ssh_client.run(
             'export SPARK_HOME="{s}" && {s}sbin/start-slave.sh {0}:7077 -h {1}  --port 9999 -c {2}'.format(
-                master_dns, instance.public_dns_name, CORE_VM, s=SPARK_HOME))
+                master_dns, instance.public_ips[0], CORE_VM, s=SPARK_HOME))
 
         # REAL CPU LOG
         log_cpu_command = 'screen -d -m -S "{0}" bash -c "sar -u 1 > sar-{1}.log"'.format(
-            instance.private_ip_address, instance.private_ip_address)
+            instance.private_ips[0], instance.private_ips[0])
         print("   Start SAR CPU Logging")
         ssh_client.run(log_cpu_command)
 
@@ -157,7 +160,7 @@ def setup_master(instance):
     """
     ssh_client = sshclient_from_instance(instance, KEY_PAIR_PATH, user_name='ubuntu')
 
-    print("Setup Master: " + instance.public_dns_name)
+    print("Setup Master: " + instance.public_ips[0])
 
     common_setup(ssh_client)
 
@@ -254,13 +257,13 @@ def setup_master(instance):
         "sed -i '55s{.*{spark.control.numtask " + str(
             NUM_TASK) + "{' " + SPARK_HOME + "conf/spark-defaults.conf")
 
-    ssh_client.run("""sed -i '3s{.*{master=""" + instance.public_dns_name +
+    ssh_client.run("""sed -i '3s{.*{master=""" + instance.public_ips[0] +
                    """{' ./spark-bench/conf/env.sh""")
     ssh_client.run("""sed -i '63s{.*{NUM_TRIALS=""" + str(BENCH_NUM_TRIALS) +
                    """{' ./spark-bench/conf/env.sh""")
 
     # CHANGE MASTER ADDRESS IN BENCHMARK
-    ssh_client.run("""sed -i '31s{.*{SPARK_CLUSTER_URL = "spark://""" + instance.public_dns_name +
+    ssh_client.run("""sed -i '31s{.*{SPARK_CLUSTER_URL = "spark://""" + instance.public_ips[0] +
                    """:7077"{' ./spark-perf/config/config.py""")
 
     # CHANGE SCALE FACTOR LINE 127
@@ -300,7 +303,7 @@ def setup_master(instance):
     ssh_client.run("sed -i '180s%memory%hdfs%g' ./spark-perf/config/config.py")
     ssh_client.run(
         """sed -i  '50s%.*%HDFS_URL = "hdfs://{0}:9000/test/"%' ./spark-perf/config/config.py""".format(
-            instance.public_dns_name))
+            instance.public_ips[0]))
     if HDFS_MASTER != "":
         ssh_client.run(
             """sed -i  '50s%.*%HDFS_URL = "hdfs://{0}:9000/test/"%' ./spark-perf/config/config.py""".format(
@@ -317,9 +320,9 @@ def setup_master(instance):
         print("   Starting Spark Master")
         ssh_client.run(
             'export SPARK_HOME="{d}" && {d}sbin/start-master.sh -h {0}'.format(
-                instance.public_dns_name, d=SPARK_HOME))
+                instance.public_ips[0], d=SPARK_HOME))
 
-    return instance.public_dns_name, instance
+    return instance.public_ips[0], instance
 
 
 @timing
@@ -348,7 +351,7 @@ def rsync_folder(ssh_client, slave):
     :return:
     """
     ssh_client.run(
-        "eval `ssh-agent -s` && ssh-add " + DATA_AMI[REGION][
+        "eval `ssh-agent -s` && ssh-add " + AZURE_DATA_IMAGE[AZURE_REGION][
             "keypair"] + ".pem && rsync -a " + HADOOP_CONF + " ubuntu@" + slave + ":" + HADOOP_CONF)
     if DELETE_HDFS:
         ssh_client.run("rm /mnt/hdfs/datanode/current/VERSION")
@@ -364,7 +367,7 @@ def setup_hdfs_config(master_instance, slaves):
     """
     ssh_client = sshclient_from_instance(master_instance, KEY_PAIR_PATH, user_name='ubuntu')
     if HDFS_MASTER == "":
-        master_dns = master_instance.public_dns_name
+        master_dns = master_instance.public_ips[0]
     else:
         master_dns = HDFS_MASTER
 
@@ -402,13 +405,13 @@ def setup_hdfs_config(master_instance, slaves):
     # Start HDFS
     if DELETE_HDFS or HDFS_MASTER == "":
         ssh_client.run(
-            "eval `ssh-agent -s` && ssh-add " + DATA_AMI[REGION][
+            "eval `ssh-agent -s` && ssh-add " + AZURE_DATA_IMAGE[AZURE_REGION][
                 "keypair"] + ".pem && /usr/local/lib/hadoop-2.7.2/sbin/stop-dfs.sh")
         ssh_client.run("rm /mnt/hdfs/datanode/current/VERSION")
         ssh_client.run("echo 'N' | /usr/local/lib/hadoop-2.7.2/bin/hdfs namenode -format")
 
     status, out, err = ssh_client.run(
-        "eval `ssh-agent -s` && ssh-add " + DATA_AMI[REGION][
+        "eval `ssh-agent -s` && ssh-add " + AZURE_DATA_IMAGE[AZURE_REGION][
             "keypair"] + ".pem && /usr/local/lib/hadoop-2.7.2/sbin/start-dfs.sh && /usr/local/lib/hadoop-2.7.2/bin/hdfs dfsadmin -safemode leave")
     if status != 0:
         print(out, err)
@@ -447,12 +450,18 @@ def run_benchmark():
 
     :return:
     """
-    session = boto3.Session(profile_name=CREDENTIAL_PROFILE)
-    ec2 = session.resource('ec2', region_name=REGION)
-    instances = ec2.instances.filter(
-        Filters=[{'Name': 'instance-state-name', 'Values': ['running']},
-                 {'Name': 'tag:ClusterId', 'Values': [CLUSTER_ID]}])
-
+    AzureDriver = get_driver(Provider.AZURE_ARM)
+    driver = AzureDriver(tenant_id = AZURE_TENANT_ID,
+               subscription_id = AZURE_SUBSCRIPTION_ID, 
+               key = AZURE_APPLICATION_ID, secret = AZURE_SECRET,
+               region = AZURE_LOCATION)
+    
+    nodes = driver.list_nodes()
+    cluster_nodes = [n for n in nodes if n.state=="running" 
+                     and n.extra["tags"]["Key"]==TAG[0]["Key"] 
+                     and n.extra["tags"]["Value"]==TAG[0]["Value"]]
+    
+    instances = set(cluster_nodes)
     instance_list = list(instances)
     print("Instance Found: " + str(len(instance_list)))
     if len(list(instances)) == 0:
@@ -466,12 +475,12 @@ def run_benchmark():
     end_index = min(len(instance_list), MAX_EXECUTOR + 1)
     with ThreadPoolExecutor(8) as executor:
         for i in instance_list[1:end_index]:
-            if i.public_dns_name != master_dns:
+            if i.public_ips[0] != master_dns:
                 executor.submit(setup_slave, i, master_dns)
 
     with ThreadPoolExecutor(8) as executor:
         for i in instance_list[end_index:]:
-            if i.public_dns_name != master_dns:
+            if i.public_ips[0] != master_dns:
                 ssh_client = sshclient_from_instance(i, KEY_PAIR_PATH, user_name='ubuntu')
                 executor.submit(common_setup, ssh_client)
 
@@ -482,7 +491,7 @@ def run_benchmark():
             for i in instances:
                 executor.submit(setup_hdfs_ssd, i)
 
-        slaves = [i.public_dns_name for i in instance_list[:end_index]]
+        slaves = [i.public_ips[0] for i in instance_list[:end_index]]
         slaves.remove(master_dns)
         setup_hdfs_config(master_instance, slaves)
 
@@ -491,10 +500,10 @@ def run_benchmark():
     print("MASTER: " + master_dns)
     ssh_client = sshclient_from_instance(master_instance, KEY_PAIR_PATH, user_name='ubuntu')
     #  CHECK IF KEY IN MASTER
-    status = ssh_client.run('[ ! -e %s ]; echo $?' % (DATA_AMI[REGION]["keypair"] + ".pem"))
+    status = ssh_client.run('[ ! -e %s ]; echo $?' % (AZURE_DATA_IMAGE[AZURE_REGION]["keypair"] + ".pem"))
     if not int(status[1].decode('utf8').replace("\n", "")):
-        ssh_client.put_file(KEY_PAIR_PATH, "/home/ubuntu/" + DATA_AMI[REGION]["keypair"] + ".pem")
-        ssh_client.run("chmod 400 "+ "/home/ubuntu/" + DATA_AMI[REGION]["keypair"] + ".pem")
+        ssh_client.put_file(KEY_PAIR_PATH, "/home/ubuntu/" + AZURE_DATA_IMAGE[AZURE_REGION]["keypair"] + ".pem")
+        ssh_client.run("chmod 400 "+ "/home/ubuntu/" + AZURE_DATA_IMAGE[AZURE_REGION]["keypair"] + ".pem")
         
     # LANCIARE BENCHMARK
     if HDFS == 0:
@@ -523,13 +532,13 @@ def run_benchmark():
             if DELETE_HDFS:
                 print("Generating Data Benchmark " + bench)
                 ssh_client.run(
-                    'eval `ssh-agent -s` && ssh-add ' + DATA_AMI[REGION][
+                    'eval `ssh-agent -s` && ssh-add ' + AZURE_DATA_IMAGE[AZURE_REGION][
                         "keypair"] + '.pem && export SPARK_HOME="' + SPARK_HOME + '" && ./spark-bench/' + bench + '/bin/gen_data.sh')
 
             check_slave_connected_master(ssh_client)
             print("Running Benchmark " + bench)
             ssh_client.run(
-                'eval `ssh-agent -s` && ssh-add ' + DATA_AMI[REGION][
+                'eval `ssh-agent -s` && ssh-add ' + AZURE_DATA_IMAGE[AZURE_REGION][
                     "keypair"] + '.pem && export SPARK_HOME="' + SPARK_HOME + '" && ./spark-bench/' + bench + '/bin/run.sh')
             logfolder = "./spark-bench/num"
             output_folder = "./spark-bench/num/"

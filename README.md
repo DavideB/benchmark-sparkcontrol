@@ -2,40 +2,59 @@
 
 Spark Control Benchmark is a benchmarking suite specific for testing the perfomance of the planning controller in [cSpark](https://github.com/ElfoLiNk/spark).
 
-The tool is composed by five principal component: **launch.py**, **run.py**, **log.py**, **plot.py**, **metrics.py** in addition to the configuration file **config.py**. The **launch.py** module manages the startup of the instances on *Amazon EC2* via spot request and waits the instance creation linked to the spot request and its full launch. Subsequently the **run.py** module receives as input the instances on which to configure the cluster (*HDFS* or *Spark*) and configure the benchmarks to be executed and waits for the end of the benchmark. The module **log.py** download and save the log of the benchmark performed by such. The **plot.py** and **metrics.py** modules respectively generate graphs and calculate metrics.
+The tool is composed by five principal component: **launch.py**, **run.py**, **log.py**, **plot.py**, **metrics.py** in addition to the configuration file **config.py**. The **launch.py** module manages the startup of the virtual machine instances on *Azure VM* and waits for the instance to be created and exposed to the internet. Subsequently the **run.py** module receives as input the instances on which to configure the cluster (*HDFS* or *Spark*), configures the benchmarks to be executed and waits for the benchmarks  to end. The module **log.py** downloads and saves the log produced by the benchmarks. The **plot.py** and **metrics.py** modules respectively generate graphs and calculate metrics.
 
-The documentation of the API can be found [here](https://elfolink.github.io/benchmark-sparkcontrol/).
+
+## Microsoft Azure support implementation
+Based on the *Apache Libcloud APIs*, the current version implements the first of the following two-step approach:
+1) Implementation of an Azure-only version, exploiting to the maximum extent the usage of vendor-agnostic code provided by Libcloud.
+2) Extend support to other Cloud Providers, like AWS, leveraging the vendor-agnostic core implementation, and developing Provider specific code only if strictly necessary.
+
+The documentation of the API can be found [here](https://github.com/DavideB/benchmark-sparkcontrol).
+
 
 ## Download & Requirements
+Checkout the "Azure-only" branch from: https://github.com/DavideB/benchmark-sparkcontrol
 
 ```bash
-git clone https://github.com/ElfoLiNk/benchmark-sparkcontrol.git
+git clone https://github.com/DavideB/benchmark-sparkcontrol
 cd benchmark-sparkcontrol
-pip instal -r requirements.txt
+pip install -r requirements.txt
 ```
 
-## AWS Credentials
-Open the credential file of Amazon AWS
+### Apache Libcloud and Microsoft Azure reference documentation 
+- API Libcloud documentation @: https://libcloud.readthedocs.org/en/latest/
+- Azure SDK for Python documentation @:  http://azure-sdk-for-python.readthedocs.io/en/latest/resourcemanagementcomputenetwork.html
+
+
+## Azure VM Credentials
+Open the credential file for Azure VM:
 
 ```bash
 nano ~/.aws/credentials
 ```
 
-And add the credential for cspark
+and add the credential for cspark:
 
-```bash
-[cspark]
-aws_access_key_id=< KEY-ID >
-aws_secret_access_key=< ACCESS-KEY >
+```nano
+{ 
+  "cspark":	{ "tenant_id": "< TENANT-ID >", 
+			  "client_id": "< CLIENT-ID>", 
+			  "application_id": "< APPLICATION-ID >", 
+			  "secret": "< SECRET >", 
+			  "subscription_id": "< SUBSCRIPTION >" }
+}
 ```
 
 ## Configuration
-See [config.py](https://elfolink.github.io/benchmark-sparkcontrol/config.html) 
+See [config.py]https://github.com/DavideB/benchmark-sparkcontrol/config.html) 
+
 
 ## Example: Test PageRank
-After added the AWS credential to create a cluster with open the file config.py and change this setting:
+After addition of the Azure credentials to create a cluster with, open the file config.py and change these settings:
+
 ```python
-DATA_AMI = # The name of the KeyPair for the instance
+AZURE_DATA_IMAGE = # The name of the KeyPair for the instance
 KEY_PAIR_PATH = # The local path of the KeyPair 
 NUM_INSTANCE = 7 # 1 NameNode + 6 DataNode
 CLUSTER_ID = "HDFS" # We first create an HDFS cluster
@@ -44,7 +63,7 @@ After editing the config.py, launch the file main.py. After setup and launch of 
 
 Now to launch PageRank on a new cSpark cluster setup the config.py file as follows:
 ```python
-DATA_AMI = # The name of the KeyPair for the instance
+AZURE_DATA_IMAGE = # The name of the KeyPair for the instance
 KEY_PAIR_PATH = # The local path of the KeyPair 
 NUM_INSTANCE = 7 # 1 MasterNode + 6 WorkerNode
 CLUSTER_ID = "CSPARK" # We first create an HDFS cluster
@@ -53,7 +72,7 @@ PREV_SCALE_FACTOR = 0 # This is needed for generate new data
 BENCHMARK_BENCH = ["PageRank"]
 ```
 
-
+```
 ### TODO
 - [ ] Add commandline parameters in main.py to override config.py
-- [ ] Add support for Azure
+- [ ] Add support for AWS-EC2 back into the tool

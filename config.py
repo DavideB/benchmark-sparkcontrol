@@ -1,6 +1,58 @@
+import json
 """
 Configuration module of cSpark test benchmark
 """
+# Azure
+AZURE_VM_PUBLISHER_NAME = "Canonical"
+AZURE_VM_OFFER_NAME = "UbuntuServer"
+AZURE_VM_SKU_NAME = "16.04-LTS"
+AZURE_VM_VERSION = "latest"
+AZURE_RESOURCE_GROUP = "test"
+AZURE_REGION = "eastus" 
+AZURE_LOCATION_TO_COUNTRY = {
+        "centralus": "Iowa, USA",
+        "eastus": "Virginia, USA",
+        "eastus2": "Virginia, USA",
+        "usgoviowa": "Iowa, USA",
+        "usgovvirginia": "Virginia, USA",
+        "northcentralus": "Illinois, USA",
+        "southcentralus": "Texas, USA",
+        "westus": "California, USA",
+        "northeurope": "Ireland",
+        "westeurope": "Netherlands",
+        "eastasia": "Hong Kong",
+        "southeastasia": "Singapore",
+        "japaneast": "Tokyo, Japan",
+        "japanwest": "Osaka, Japan",
+        "brazilsouth": "Sao Paulo State, Brazil",
+        "australiaeast": "New South Wales, Australia",
+        "australiasoutheast": "Victoria, Australia"
+    }
+AZURE_DATA_IMAGE = {"eastus": {"image_id": AZURE_VM_PUBLISHER_NAME+":"+AZURE_VM_OFFER_NAME+":"+AZURE_VM_SKU_NAME+":"+AZURE_VM_VERSION,
+                               "publisher": AZURE_VM_PUBLISHER_NAME,
+                               "version": AZURE_VM_VERSION,
+                               "sku": AZURE_VM_SKU_NAME,
+                               "offer": AZURE_VM_OFFER_NAME,
+                               "location": AZURE_LOCATION_TO_COUNTRY["eastus"],
+                               "keypair": "Azure-VM-A0-Davide",
+                               "snapid": "",}
+                        }
+"""Azure nodeimages id by region"""
+
+#AZURE_NODE_SIZE ="Standard_D14"
+AZURE_NODE_SIZE ="Standard_A0"
+
+AZURE_KEY_PAIR_PATH = "/Davide/Universita/LM/Tesi/Azure/"
+"""KeyPair path for the instance"""
+
+AZURE_PUBLIC_KEY = AZURE_KEY_PAIR_PATH + AZURE_DATA_IMAGE[AZURE_REGION]["keypair"] + "-public"
+AZURE_CREDENTIALS = json.load(open( "./.azure/credentials"))["free-trial"]
+AZURE_TENANT_ID = AZURE_CREDENTIALS["tenant_id"]
+AZURE_CLIENT_ID = AZURE_CREDENTIALS["client_id"]
+AZURE_SECRET = AZURE_CREDENTIALS["secret"]
+AZURE_SUBSCRIPTION_ID = AZURE_CREDENTIALS["subscription_id"]
+AZURE_APPLICATION_ID=AZURE_CREDENTIALS["application_id"]
+AZURE_LOCATION = AZURE_REGION
 
 # AWS
 DATA_AMI = {"eu-west-1": {"ami": 'ami-d3225da0',
@@ -11,19 +63,31 @@ DATA_AMI = {"eu-west-1": {"ami": 'ami-d3225da0',
                           "snapid": "snap-4f38bf1c",
                           "az": 'us-west-2c',
                           "keypair": "giovanni2",
-                          "price": "0.3"}}
+                          "price": "0.3"},
+            "us-east-1": {"ami": 'ami-1f3c9f09',
+                          "snapid": "",
+                          "az": 'us-east-1a',
+                          "keypair": "AWS-EC2-Micro-Davide",
+                          "price": "0.3"
+                          }}
 """AMI id for region and availability zone"""
 
-CREDENTIAL_PROFILE = 'cspark'
+#CREDENTIAL_PROFILE = 'cspark'
+CREDENTIAL_PROFILE = 'test'
 """Credential profile name of AWS"""
-REGION = "us-west-2"
+#REGION = "us-west-2"
+REGION = "us-east-1"
 """Region of AWS to use"""
-KEY_PAIR_PATH = "/Users/Giovanni/Desktop/" + DATA_AMI[REGION]["keypair"] + ".pem"
+#KEY_PAIR_PATH = "/Users/Giovanni/Desktop/" + DATA_AMI[REGION]["keypair"] + ".pem"
+#KEY_PAIR_PATH = "/Davide/Universita/LM/Tesi/AWS/" + DATA_AMI[REGION]["keypair"] + ".pem"
+KEY_PAIR_PATH = "/Davide/Universita/LM/Tesi/Azure/" + AZURE_DATA_IMAGE[AZURE_REGION]["keypair"] + ".pem"
 """KeyPair path for the instance"""
-SECURITY_GROUP = "spark-cluster"
-"""Secutiry group of the instance"""
+#SECURITY_GROUP = "spark-cluster"
+SECURITY_GROUP = "default"
+"""Security group of the instance"""
 PRICE = DATA_AMI[REGION]["price"]
-INSTANCE_TYPE = "r3.4xlarge"
+#INSTANCE_TYPE = "r3.4xlarge"
+INSTANCE_TYPE = "t2.micro"
 """Instance type"""
 NUM_INSTANCE = 0
 """Number of instance to use"""
@@ -32,10 +96,11 @@ REBOOT = 0
 """Reboot the instances of the cluster"""
 KILL_JAVA = 1
 """Kill every java application on the cluster"""
-NUM_RUN = 1
+NUM_RUN = 0
 """Number of run to repeat the benchmark"""
 
-CLUSTER_ID = "CSPARK"
+CLUSTER_ID = "HDFS"
+#CLUSTER_ID = "CSPARK"
 """Id of the cluster with the launched instances"""
 print("Cluster ID : " + str(CLUSTER_ID))
 TAG = [{
@@ -44,7 +109,9 @@ TAG = [{
 }]
 
 # HDFS
-HDFS_MASTER = "ec2-35-161-111-116.us-west-2.compute.amazonaws.com"
+HDFS_MASTER = ""
+#HDFS_MASTER = "13.92.180.50"
+
 """Url of the HDFS NameNode if not set the cluster created is an HDFS Cluster"""
 # Spark config
 SPARK_2_HOME = "/opt/spark/"
@@ -104,7 +171,7 @@ CORE_MIN = 0.0
 CPU_PERIOD = 100000
 
 # BENCHMARK
-RUN = 1
+RUN = 0
 SYNC_TIME = 1
 PREV_SCALE_FACTOR = 1000
 """*Important Settings* if it is equals to SCALE_FACTOR no need to generate new data on HDFS"""
@@ -205,7 +272,7 @@ else:
 BENCH_CONF[BENCHMARK_PERF[0] if len(BENCHMARK_PERF) > 0 else BENCHMARK_BENCH[0]][
     "NumTrials"] = BENCH_NUM_TRIALS
 
-# Terminate istance after benchmark
+# Terminate instance after benchmark
 TERMINATE = 0
 
 # HDFS
@@ -236,11 +303,27 @@ CONFIG_DICT = {
         "Price": PRICE,
         "AMI": DATA_AMI[REGION]["ami"],
         "Region": REGION,
-        "AZ": DATA_AMI[REGION]["az"],
+        "Location": DATA_AMI[REGION]["az"],
         "SecurityGroup": SECURITY_GROUP,
         "KeyPair": DATA_AMI[REGION]["keypair"],
-        "EbsOptimized": EBS_OPTIMIZED,
         "SnapshotId": DATA_AMI[REGION]["snapid"]
+    },
+    "Azure": {
+        "NamePrefix": "testVM",
+        "Size": AZURE_NODE_SIZE,
+        "HyperThreading": not DISABLE_HT,
+        "Price": PRICE,
+        "ImageId": AZURE_DATA_IMAGE[AZURE_REGION]["image_id"],
+        "UserName": "ubuntu",
+        "Auth": open(AZURE_PUBLIC_KEY, mode='r').read(),
+        "Region": AZURE_DATA_IMAGE[AZURE_REGION],
+        "Location": AZURE_LOCATION,
+        "ResourceGroup": AZURE_RESOURCE_GROUP,
+        "StorageAccount": "storespark0",
+        "Network": "test-vnet",
+        "DNSNamePrefix": "test-vm",
+        "Subnet": "default",
+        "SnapshotId": AZURE_DATA_IMAGE[AZURE_REGION]["snapid"]
     },
     "Spark": {
         "ExecutorCore": CORE_VM,

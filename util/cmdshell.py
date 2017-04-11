@@ -348,9 +348,9 @@ class FakeServer(object):
     def __init__(self, instance, ssh_key_file):
         self.instance = instance
         self.ssh_key_file = ssh_key_file
-        self.hostname = instance.public_dns_name
+        self.hostname = instance.public_ips[0] #Davide Bertolotti 20170330: public_dns_name for AWS replaced with public_ips[0] for Azure
         self.instance_id = self.instance.id
-
+        
 
 def start(server):
     """
